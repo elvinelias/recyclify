@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
-import * as tf from "@tensorflow/tfjs"; // required side-effect to init TF backend
+import * as tf from "@tensorflow/tfjs";
+
+const SCORE_THRESHOLD = 0.5; // anything below this is too low-confidence
+const IGNORED_CLASSES = new Set(["person"]); // skip humans only
+const RECYCLABLE = new Set([
+  "bottle", "can", "cardboard", "paper", "cup", "box", "wine glass", "plastic bag",
+  "bowl", "fork", "knife", "spoon", "plate", "banana", "apple", "orange"
+]);
 
 export default function App() {
   const videoRef = useRef(null);
@@ -9,10 +16,11 @@ export default function App() {
   const [status, setStatus] = useState("Loading AI model…");
   const [detecting, setDetecting] = useState(true);
 
-  // Load COCO-SSD model
   useEffect(() => {
     (async () => {
       try {
+        await tf.setBackend("webgl");
+        await tf.ready();
         const m = await cocoSsd.load();
         setModel(m);
         setStatus("Model loaded ✅");
@@ -23,7 +31,6 @@ export default function App() {
     })();
   }, []);
 
-  // Ask for webcam and attach stream
   useEffect(() => {
     (async () => {
       try {
@@ -36,15 +43,28 @@ export default function App() {
     })();
   }, []);
 
-  // Detection loop (every 300ms)
   useEffect(() => {
     if (!model) return;
-    const id = setInterval(async () => {
-      if (!detecting || !videoRef.current) return;
-      const preds = await model.detect(videoRef.current);
-      draw(preds);
-    }, 300);
-    return () => clearInterval(id);
+    let rafId;
+
+    const detectFrame = async () => {
+      if (detecting && videoRef.current) {
+        let predictions = await model.detect(videoRef.current);
+
+        // ignore people, filter by confidence
+        predictions = predictions.filter(
+          (p) =>
+            !IGNORED_CLASSES.has(p.class.toLowerCase()) &&
+            p.score >= SCORE_THRESHOLD
+        );
+
+        draw(predictions);
+      }
+      rafId = requestAnimationFrame(detectFrame);
+    };
+
+    detectFrame();
+    return () => cancelAnimationFrame(rafId);
   }, [model, detecting]);
 
   const draw = (predictions) => {
@@ -52,24 +72,20 @@ export default function App() {
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
 
-    // match canvas to video stream size
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
 
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const recyclable = [
-      "bottle", "can", "cardboard", "paper", "cup", "box", "wine glass"
-    ];
-
     predictions.forEach((p) => {
       const [x, y, w, h] = p.bbox;
-      const label = (p.class || "").toLowerCase();
-      const isRecyclable = recyclable.includes(label);
+      const label = p.class.toLowerCase();
+      const isRecyclable = RECYCLABLE.has(label);
+      const color = isRecyclable ? "#00ff88" : "#ff4444";
       const tag = isRecyclable ? "♻️ Recyclable" : "🗑️ Not Recyclable";
 
-      ctx.strokeStyle = isRecyclable ? "#00ff88" : "#ff4444";
+      ctx.strokeStyle = color;
       ctx.lineWidth = 3;
       ctx.strokeRect(x, y, w, h);
 
@@ -79,12 +95,10 @@ export default function App() {
       const tw = ctx.measureText(text).width + pad * 2;
       const th = 22;
 
-      // label background
       ctx.fillStyle = "rgba(0,0,0,0.6)";
       ctx.fillRect(x, Math.max(0, y - th), tw, th);
 
-      // label text
-      ctx.fillStyle = isRecyclable ? "#00ff88" : "#ffdddd";
+      ctx.fillStyle = color;
       ctx.fillText(text, x + pad, Math.max(14, y - 6));
     });
   };
@@ -95,13 +109,7 @@ export default function App() {
       <p className="text-sm text-gray-300 mb-4">{status}</p>
 
       <div className="relative w-full max-w-[900px] aspect-video rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="w-full h-full object-cover"
-        />
+        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
         <canvas ref={canvasRef} className="absolute inset-0" />
       </div>
 
@@ -121,7 +129,7 @@ export default function App() {
       </div>
 
       <footer className="mt-6 text-xs text-gray-500">
-        Built for the hackathon ♻️
+        Built for the hackathon ♻️ — detects all objects (no people)
       </footer>
     </div>
   );
