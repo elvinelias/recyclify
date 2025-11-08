@@ -1,136 +1,136 @@
-import { useEffect, useRef, useState } from "react";
-import * as cocoSsd from "@tensorflow-models/coco-ssd";
-import * as tf from "@tensorflow/tfjs";
+import { useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import Detect from "./pages/Detect.jsx";
+import Quiz from "./pages/Quiz.jsx";
 
-const SCORE_THRESHOLD = 0.5; // anything below this is too low-confidence
-const IGNORED_CLASSES = new Set(["person"]); // skip humans only
-const RECYCLABLE = new Set([
-  "bottle", "can", "cardboard", "paper", "cup", "box", "wine glass", "plastic bag",
-  "bowl", "fork", "knife", "spoon", "plate", "banana", "apple", "orange"
-]);
+function NavItem({ to, label, end = false }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        `px-3 py-2 rounded-lg transition ${
+          isActive
+            ? "bg-white/10 text-white"
+            : "text-white/70 hover:text-white hover:bg-white/5"
+        }`
+      }
+    >
+      {label}
+    </NavLink>
+  );
+}
 
 export default function App() {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [model, setModel] = useState(null);
-  const [status, setStatus] = useState("Loading AI model…");
-  const [detecting, setDetecting] = useState(true);
+  // 🧠 Live AI stats captured from Detect page via a custom event
+  const [stats, setStats] = useState({
+    recyclable: 0,
+    non: 0,
+    total: 0,
+    avgOverall: 0,
+    fps: 0,
+  });
 
   useEffect(() => {
-    (async () => {
-      try {
-        await tf.setBackend("webgl");
-        await tf.ready();
-        const m = await cocoSsd.load();
-        setModel(m);
-        setStatus("Model loaded ✅");
-      } catch (e) {
-        console.error(e);
-        setStatus("Failed to load model ❌");
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        if (videoRef.current) videoRef.current.srcObject = stream;
-      } catch (e) {
-        console.error("Camera error:", e);
-        setStatus("Camera permission denied ❌");
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (!model) return;
-    let rafId;
-
-    const detectFrame = async () => {
-      if (detecting && videoRef.current) {
-        let predictions = await model.detect(videoRef.current);
-
-        // ignore people, filter by confidence
-        predictions = predictions.filter(
-          (p) =>
-            !IGNORED_CLASSES.has(p.class.toLowerCase()) &&
-            p.score >= SCORE_THRESHOLD
-        );
-
-        draw(predictions);
-      }
-      rafId = requestAnimationFrame(detectFrame);
+    const onStats = (e) => {
+      const { counts, avgOverall, fps } = e.detail || {};
+      setStats({
+        recyclable: counts?.recyclable ?? 0,
+        non: counts?.non ?? 0,
+        total: counts?.total ?? 0,
+        avgOverall: avgOverall ?? 0,
+        fps: Math.round(fps ?? 0),
+      });
     };
-
-    detectFrame();
-    return () => cancelAnimationFrame(rafId);
-  }, [model, detecting]);
-
-  const draw = (predictions) => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-
-    const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    predictions.forEach((p) => {
-      const [x, y, w, h] = p.bbox;
-      const label = p.class.toLowerCase();
-      const isRecyclable = RECYCLABLE.has(label);
-      const color = isRecyclable ? "#00ff88" : "#ff4444";
-      const tag = isRecyclable ? "♻️ Recyclable" : "🗑️ Not Recyclable";
-
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 3;
-      ctx.strokeRect(x, y, w, h);
-
-      const text = `${p.class} ${Math.round(p.score * 100)}% – ${tag}`;
-      ctx.font = "16px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-      const pad = 6;
-      const tw = ctx.measureText(text).width + pad * 2;
-      const th = 22;
-
-      ctx.fillStyle = "rgba(0,0,0,0.6)";
-      ctx.fillRect(x, Math.max(0, y - th), tw, th);
-
-      ctx.fillStyle = color;
-      ctx.fillText(text, x + pad, Math.max(14, y - 6));
-    });
-  };
+    window.addEventListener("recyclify:stats", onStats);
+    return () => window.removeEventListener("recyclify:stats", onStats);
+  }, []);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4">
-      <h1 className="text-5xl font-bold text-green-400 mb-1">Recyclify</h1>
-      <p className="text-sm text-gray-300 mb-4">{status}</p>
+    <BrowserRouter>
+      {/* Navbar */}
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-black/40 backdrop-blur-md">
+        <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-green-400 to-emerald-600 shadow-glow" />
+            <span className="text-lg font-semibold tracking-tight">
+              Recyclify
+            </span>
+          </div>
 
-      <div className="relative w-full max-w-[900px] aspect-video rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
-        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-        <canvas ref={canvasRef} className="absolute inset-0" />
-      </div>
+          <div className="flex items-center gap-3">
+            {/* 🔢 Live AI Stats Pill */}
+            <div className="hidden sm:flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/80">
+              <span className="inline-flex items-center gap-1">
+                ♻️ <b className="text-emerald-400">{stats.recyclable}</b>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                🗑️ <b className="text-red-400">{stats.non}</b>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                Total <b className="text-white/90">{stats.total}</b>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                Avg {Math.round(stats.avgOverall * 100)}%
+              </span>
+              <span className="inline-flex items-center gap-1">
+                {stats.fps} fps
+              </span>
+            </div>
 
-      <div className="mt-5 flex gap-3">
-        <button
-          onClick={() => setDetecting((d) => !d)}
-          className="px-4 py-2 rounded-xl bg-green-500 hover:bg-green-600 active:scale-95 transition font-semibold"
-        >
-          {detecting ? "⏸ Pause Detection" : "▶️ Resume Detection"}
-        </button>
-        <button
-          onClick={() => window.location.reload()}
-          className="px-4 py-2 rounded-xl bg-gray-600 hover:bg-gray-700 active:scale-95 transition font-semibold"
-        >
-          🔄 Restart
-        </button>
-      </div>
+            <NavItem to="/" label="Detect" end />
+            <NavItem to="/quiz" label="Quiz" />
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noreferrer"
+              className="ml-1 px-3 py-2 rounded-lg text-white/70 hover:text-white hover:bg-white/5"
+            >
+              GitHub
+            </a>
+          </div>
+        </nav>
+      </header>
 
-      <footer className="mt-6 text-xs text-gray-500">
-        Built for the hackathon ♻️ — detects all objects (no people)
+      {/* Page Routes */}
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <Routes>
+          <Route path="/" element={<Detect />} />
+          <Route path="/quiz" element={<Quiz />} />
+        </Routes>
+      </main>
+
+      {/* Footer */}
+      <footer className="mt-16 border-t border-white/10">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 flex flex-col md:flex-row items-center md:items-start justify-between gap-6">
+          <div className="max-w-md text-white/70 text-sm">
+            <div className="font-semibold text-white mb-1">Recyclify</div>
+            AI-powered recycling assistant. Real-time detection + interactive
+            learning.
+          </div>
+          <div className="flex gap-8 text-sm">
+            <div className="space-y-2">
+              <div className="text-white/60 uppercase tracking-wide text-xs">
+                Product
+              </div>
+              <a className="block text-white/70 hover:text-white" href="/">
+                Detect
+              </a>
+              <a className="block text-white/70 hover:text-white" href="/quiz">
+                Quiz
+              </a>
+            </div>
+            <div className="space-y-2">
+              <div className="text-white/60 uppercase tracking-wide text-xs">
+                Legal
+              </div>
+              <span className="block text-white/50">
+                © {new Date().getFullYear()} Recyclify
+              </span>
+            </div>
+          </div>
+        </div>
       </footer>
-    </div>
+    </BrowserRouter>
   );
 }

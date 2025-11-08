@@ -1,24 +1,71 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="h-full">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Recyclify</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Recyclify — AI Recycling Assistant</title>
 
-    <!-- ✅ Tailwind via CDN (no build step needed) -->
+    <!-- Tailwind CSS via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      // Optional: tweak Tailwind here if you want
-      tailwind.config = { theme: { extend: {} }, darkMode: 'class' }
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              ui: [
+                "SF Pro Text",
+                "-apple-system",
+                "BlinkMacSystemFont",
+                "Segoe UI",
+                "Inter",
+                "Roboto",
+                "Helvetica Neue",
+                "Arial",
+                "system-ui",
+                "sans-serif",
+              ],
+            },
+            colors: {
+              brand: {
+                500: "#10c58a",
+                600: "#0aa878",
+                700: "#0a8562",
+              },
+            },
+            boxShadow: {
+              glow: "0 8px 40px rgba(16,197,138,0.35)",
+            },
+          },
+        },
+      };
     </script>
+
+    <link
+      rel="preconnect"
+      href="https://fonts.gstatic.com"
+      crossorigin
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
   </head>
-  <body class="bg-gradient-to-br from-gray-800 via-gray-900 to-black text-white">
-    <!-- Quick visual check that Tailwind works -->
-    <div class="text-2xl text-red-400 text-center py-2">
-      Tailwind is active (this should be big & red)
+
+  <body class="h-full font-ui text-white bg-[#0b0d10]">
+    <!-- Subtle background glows -->
+    <div class="pointer-events-none fixed inset-0 -z-10">
+      <div
+        class="absolute -top-32 -left-32 h-96 w-96 rounded-full blur-3xl opacity-30"
+        style="background: radial-gradient(40% 40% at 50% 50%, #10c58a 0%, transparent 65%)"
+      ></div>
+      <div
+        class="absolute -bottom-40 -right-24 h-[28rem] w-[28rem] rounded-full blur-3xl opacity-25"
+        style="background: radial-gradient(40% 40% at 50% 50%, #60a5fa 0%, transparent 65%)"
+      ></div>
     </div>
 
     <div id="root"></div>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
