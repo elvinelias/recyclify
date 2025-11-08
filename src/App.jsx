@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import Detect from "./pages/Detect.jsx";
 import Quiz from "./pages/Quiz.jsx";
+import Learn from "./pages/Learn.jsx"; // ⬅️ NEW
 
 function NavItem({ to, label, end = false }) {
   return (
@@ -80,6 +81,7 @@ export default function App() {
 
             <NavItem to="/" label="Detect" end />
             <NavItem to="/quiz" label="Quiz" />
+            <NavItem to="/learn" label="Learn" /> {/* ⬅️ NEW */}
             <a
               href="https://github.com"
               target="_blank"
@@ -97,6 +99,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Detect />} />
           <Route path="/quiz" element={<Quiz />} />
+          <Route path="/learn" element={<Learn />} /> {/* ⬅️ NEW */}
         </Routes>
       </main>
 
@@ -118,6 +121,9 @@ export default function App() {
               </a>
               <a className="block text-white/70 hover:text-white" href="/quiz">
                 Quiz
+              </a>
+              <a className="block text-white/70 hover:text-white" href="/learn">
+                Learn
               </a>
             </div>
             <div className="space-y-2">

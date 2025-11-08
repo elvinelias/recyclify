@@ -18,6 +18,65 @@ export default function Detect() {
   const [fps, setFps] = useState(0);
   const last = useRef(performance.now());
 
+  // --- Nearby location + ZIP search state (NEW) ---
+  const [zip, setZip] = useState("");
+  const [loc, setLoc] = useState({
+    lat: null,
+    lng: null,
+    status: "idle", // idle | requesting | granted | denied
+    error: null,
+  });
+
+  const isZip = (z) => /^\d{5}$/.test((z || "").trim());
+
+  function requestLocation() {
+    if (!("geolocation" in navigator)) {
+      setLoc((s) => ({ ...s, status: "denied", error: "Geolocation not supported" }));
+      return;
+    }
+    setLoc((s) => ({ ...s, status: "requesting", error: null }));
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLoc({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          status: "granted",
+          error: null,
+        });
+      },
+      (err) => {
+        setLoc({ lat: null, lng: null, status: "denied", error: err.message || "Denied" });
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  }
+
+  function mapsUrl() {
+    if (loc.lat != null && loc.lng != null) {
+      return `https://www.google.com/maps/search/${encodeURIComponent("recycling center")}/@${loc.lat},${loc.lng},14z`;
+    }
+    const q = isZip(zip) ? `recycling center near ${zip}` : "recycling center near me";
+    return `https://www.google.com/maps/search/${encodeURIComponent(q)}`;
+  }
+
+  function openMaps() {
+    window.open(mapsUrl(), "_blank");
+  }
+
+  function openEarth911() {
+    const where =
+      loc.lat != null && loc.lng != null
+        ? `${loc.lat},${loc.lng}`
+        : isZip(zip)
+        ? zip
+        : "";
+    window.open(
+      `https://search.earth911.com/?what=Recycling&where=${encodeURIComponent(where)}`,
+      "_blank"
+    );
+  }
+  // --- End Nearby location state ---
+
   useEffect(() => {
     (async () => {
       try {
@@ -172,6 +231,62 @@ export default function Detect() {
             <li>Keep caps on bottles after rinsing.</li>
             <li>Plastic bags/film: take to store drop-off.</li>
           </ul>
+
+          {/* Nearby Recycling Finder (NEW) */}
+          <div className="mt-6 rounded-xl border border-white/10 bg-black/30 p-4">
+            <h4 className="font-medium text-white/90">Find nearby recycling</h4>
+            <p className="mt-1 text-xs text-white/60">
+              Use your current location or enter a ZIP code.
+            </p>
+
+            <div className="mt-3 flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={requestLocation}
+                className="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 font-semibold shadow-glow"
+              >
+                📍 Use my location
+              </button>
+              <input
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="ZIP code (US)"
+                value={zip}
+                onChange={(e) => setZip(e.target.value)}
+                className="w-full sm:w-40 rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            {/* Status line */}
+            <div className="mt-2 text-xs text-white/60">
+              {loc.status === "requesting" && "Requesting location permission…"}
+              {loc.status === "granted" && (
+                <span>
+                  Location set ✓{" "}
+                  <span className="text-white/50">
+                    ({loc.lat?.toFixed(3)}, {loc.lng?.toFixed(3)})
+                  </span>
+                </span>
+              )}
+              {loc.status === "denied" && (
+                <span className="text-red-400">Location unavailable: {loc.error}</span>
+              )}
+            </div>
+
+            <div className="mt-3 flex gap-3">
+              <button
+                onClick={openMaps}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 font-semibold"
+              >
+                Open in Google Maps
+              </button>
+              <button
+                onClick={openEarth911}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 font-semibold"
+              >
+                Earth911 Search
+              </button>
+            </div>
+          </div>
 
           <div className="mt-6 flex gap-3">
             <button
