@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import Detect from "./pages/Detect.jsx";
 import Quiz from "./pages/Quiz.jsx";
-import Learn from "./pages/Learn.jsx"; // ⬅️ NEW
+import Learn from "./pages/Learn.jsx";
+import ChatWidget from "./components/ChatWidget.jsx";
 
 function NavItem({ to, label, end = false }) {
   return (
@@ -23,7 +24,6 @@ function NavItem({ to, label, end = false }) {
 }
 
 export default function App() {
-  // 🧠 Live AI stats captured from Detect page via a custom event
   const [stats, setStats] = useState({
     recyclable: 0,
     non: 0,
@@ -81,7 +81,7 @@ export default function App() {
 
             <NavItem to="/" label="Detect" end />
             <NavItem to="/quiz" label="Quiz" />
-            <NavItem to="/learn" label="Learn" /> {/* ⬅️ NEW */}
+            <NavItem to="/learn" label="Learn" />
             <a
               href="https://github.com"
               target="_blank"
@@ -99,18 +99,19 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Detect />} />
           <Route path="/quiz" element={<Quiz />} />
-          <Route path="/learn" element={<Learn />} /> {/* ⬅️ NEW */}
+          <Route path="/learn" element={<Learn />} />
         </Routes>
       </main>
 
       {/* Footer */}
-      <footer className="mt-16 border-t border-white/10">
+      <footer className="mt-16 border-t border-white/10 bg-black/30 backdrop-blur-md">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 flex flex-col md:flex-row items-center md:items-start justify-between gap-6">
           <div className="max-w-md text-white/70 text-sm">
             <div className="font-semibold text-white mb-1">Recyclify</div>
             AI-powered recycling assistant. Real-time detection + interactive
             learning.
           </div>
+
           <div className="flex gap-8 text-sm">
             <div className="space-y-2">
               <div className="text-white/60 uppercase tracking-wide text-xs">
@@ -126,17 +127,21 @@ export default function App() {
                 Learn
               </a>
             </div>
-            <div className="space-y-2">
-              <div className="text-white/60 uppercase tracking-wide text-xs">
-                Legal
-              </div>
-              <span className="block text-white/50">
-                © {new Date().getFullYear()} Recyclify
-              </span>
-            </div>
           </div>
         </div>
+
+        {/* Copyright section */}
+        <div className="border-t border-white/10 mt-6 py-4 text-center text-white/60 text-sm">
+          © {new Date().getFullYear()} Recyclify. Created by{" "}
+          <span className="text-white font-medium">
+            Elvin Elias, Sumeet Pramod, and Elson Philip
+          </span>
+          .
+        </div>
       </footer>
+
+      {/* Floating AI chat on every page */}
+      <ChatWidget />
     </BrowserRouter>
   );
 }
