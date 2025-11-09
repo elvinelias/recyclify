@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+// src/pages/Detect.jsx
+import { useEffect, useRef, useState, useMemo } from "react";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 import * as tf from "@tensorflow/tfjs";
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaflet";
 
 const SCORE_THRESHOLD = 0.5;
 const IGNORED_CLASSES = new Set(["person"]);
 const RECYCLABLE = new Set([
-  "bottle","can","cardboard","paper","cup","box","wine glass","plastic bag",
-  "bowl","fork","knife","spoon","plate","banana","apple","orange"
+  "bottle", "can", "cardboard", "paper", "cup", "box", "wine glass", "plastic bag",
+  "bowl", "fork", "knife", "spoon", "plate", "banana", "apple", "orange"
 ]);
 
 export default function Detect() {
@@ -18,65 +20,23 @@ export default function Detect() {
   const [fps, setFps] = useState(0);
   const last = useRef(performance.now());
 
-  // --- Nearby location + ZIP search state (NEW) ---
+  // 📍 Map/geo state
+  const [coord, setCoord] = useState(null);            // { lat, lon }
+  const [places, setPlaces] = useState([]);            // recycling / waste_disposal
+  const [geoErr, setGeoErr] = useState("");
+  const [loadingPlaces, setLoadingPlaces] = useState(false);
+
+  // 🗑️ Public trash bins
+  const [showTrash, setShowTrash] = useState(true);
+  const [bins, setBins] = useState([]);
+  const [loadingBins, setLoadingBins] = useState(false);
+
+  // 🔎 Finder (ZIP + explicit geolocation)
   const [zip, setZip] = useState("");
-  const [loc, setLoc] = useState({
-    lat: null,
-    lng: null,
-    status: "idle", // idle | requesting | granted | denied
-    error: null,
-  });
+  const [loc, setLoc] = useState({ lat: null, lng: null, status: "idle", error: null });
+  const zipValid = useMemo(() => /^\d{5}$/.test(zip.trim()), [zip]);
 
-  const isZip = (z) => /^\d{5}$/.test((z || "").trim());
-
-  function requestLocation() {
-    if (!("geolocation" in navigator)) {
-      setLoc((s) => ({ ...s, status: "denied", error: "Geolocation not supported" }));
-      return;
-    }
-    setLoc((s) => ({ ...s, status: "requesting", error: null }));
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLoc({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          status: "granted",
-          error: null,
-        });
-      },
-      (err) => {
-        setLoc({ lat: null, lng: null, status: "denied", error: err.message || "Denied" });
-      },
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
-  }
-
-  function mapsUrl() {
-    if (loc.lat != null && loc.lng != null) {
-      return `https://www.google.com/maps/search/${encodeURIComponent("recycling center")}/@${loc.lat},${loc.lng},14z`;
-    }
-    const q = isZip(zip) ? `recycling center near ${zip}` : "recycling center near me";
-    return `https://www.google.com/maps/search/${encodeURIComponent(q)}`;
-  }
-
-  function openMaps() {
-    window.open(mapsUrl(), "_blank");
-  }
-
-  function openEarth911() {
-    const where =
-      loc.lat != null && loc.lng != null
-        ? `${loc.lat},${loc.lng}`
-        : isZip(zip)
-        ? zip
-        : "";
-    window.open(
-      `https://search.earth911.com/?what=Recycling&where=${encodeURIComponent(where)}`,
-      "_blank"
-    );
-  }
-  // --- End Nearby location state ---
-
+  // ====== AI model + camera ======
   useEffect(() => {
     (async () => {
       try {
@@ -116,28 +76,24 @@ export default function Detect() {
 
         draw(preds);
 
-        // fps (compute instantaneous + smoothed)
+        // fps (smoothed)
         const now = performance.now();
         const dt = now - last.current;
         last.current = now;
         const instFps = 1000 / Math.max(dt, 1);
-        const newFps = Math.round(fps * 0.7 + instFps * 0.3);
-        setFps(newFps);
+        setFps((prev) => Math.round(prev * 0.7 + instFps * 0.3));
 
-        // 🧠 Emit detection stats to App.jsx (navbar pill)
+        // navbar stats broadcast
         const recCount = preds.filter((p) => RECYCLABLE.has(p.class.toLowerCase())).length;
-        const nonCount = preds.filter(
-          (p) => !RECYCLABLE.has(p.class.toLowerCase()) && !IGNORED_CLASSES.has(p.class.toLowerCase())
-        ).length;
-        const avgOverall =
-          preds.length > 0 ? preds.reduce((s, p) => s + p.score, 0) / preds.length : 0;
+        const nonCount = preds.length - recCount;
+        const avgOverall = preds.length ? preds.reduce((s, p) => s + p.score, 0) / preds.length : 0;
 
         window.dispatchEvent(
           new CustomEvent("recyclify:stats", {
             detail: {
               counts: { recyclable: recCount, non: nonCount, total: preds.length },
-              avgOverall, // 0..1
-              fps: newFps, // number
+              avgOverall,
+              fps: Math.round(instFps),
             },
           })
         );
@@ -146,7 +102,7 @@ export default function Detect() {
     };
     loop();
     return () => cancelAnimationFrame(rafId);
-  }, [model, detecting, fps]);
+  }, [model, detecting]);
 
   const draw = (predictions) => {
     const video = videoRef.current;
@@ -183,6 +139,200 @@ export default function Detect() {
     });
   };
 
+  // ======= GEO + MAP HELPERS =======
+  function FlyTo({ center }) {
+    const map = useMap();
+    useEffect(() => {
+      if (center) map.flyTo([center.lat, center.lon], 13, { duration: 0.8 });
+    }, [center, map]);
+    return null;
+  }
+
+  // Robust location request
+  const requestLocation = async () => {
+    try {
+      const isLocalhost =
+        location.hostname === "localhost" || location.hostname === "127.0.0.1";
+      if (!isLocalhost && location.protocol !== "https:") {
+        setLoc({ lat: null, lng: null, status: "denied", error: "Geolocation requires HTTPS or localhost" });
+        setGeoErr("Geolocation requires HTTPS or localhost");
+        return;
+      }
+
+      // Permissions API (best effort)
+      try {
+        if (navigator.permissions?.query) {
+          const perm = await navigator.permissions.query({ name: "geolocation" });
+          if (perm.state === "denied") {
+            setLoc({ lat: null, lng: null, status: "denied", error: "Permission denied in browser settings" });
+            setGeoErr("Permission denied in browser settings");
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      if (!("geolocation" in navigator)) {
+        setLoc({ lat: null, lng: null, status: "denied", error: "Geolocation not supported" });
+        setGeoErr("Geolocation not supported");
+        return;
+      }
+
+      setLoc((s) => ({ ...s, status: "requesting", error: null }));
+      setGeoErr("");
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          setLoc({ lat, lng, status: "granted", error: null });
+          setCoord({ lat, lon: lng });
+        },
+        (err) => {
+          let msg = "Denied";
+          if (err?.code === 1) msg = "Permission denied";
+          else if (err?.code === 2) msg = "Position unavailable";
+          else if (err?.code === 3) msg = "Timeout";
+          setLoc({ lat: null, lng: null, status: "denied", error: msg });
+          setGeoErr(msg);
+        },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+      );
+    } catch (e) {
+      console.error("Geolocation exception:", e);
+      setLoc({ lat: null, lng: null, status: "denied", error: "Unexpected error" });
+      setGeoErr("Unexpected error");
+    }
+  };
+
+  // External helpers
+  const openMaps = () => {
+    if (coord) {
+      window.open(
+        `https://www.google.com/maps/search/${encodeURIComponent("recycling center")}/@${coord.lat},${coord.lon},14z`,
+        "_blank"
+      );
+    } else {
+      const q = zipValid ? `recycling center near ${zip}` : "recycling center near me";
+      window.open(`https://www.google.com/maps/search/${encodeURIComponent(q)}`, "_blank");
+    }
+  };
+
+  const openEarth911 = () => {
+    const where = coord ? `${coord.lat},${coord.lon}` : zipValid ? zip : "";
+    window.open(
+      `https://search.earth911.com/?what=Recycling&where=${encodeURIComponent(where)}`,
+      "_blank"
+    );
+  };
+
+  // Recycling centers from Overpass (when we have coord)
+  useEffect(() => {
+    if (!coord) return;
+
+    const fetchOverpass = async () => {
+      try {
+        setLoadingPlaces(true);
+        const radius = 4000;
+        const query = `
+          [out:json][timeout:25];
+          (
+            node["amenity"="recycling"](around:${radius},${coord.lat},${coord.lon});
+            node["amenity"="waste_disposal"](around:${radius},${coord.lat},${coord.lon});
+            way["amenity"="recycling"](around:${radius},${coord.lat},${coord.lon});
+            way["amenity"="waste_disposal"](around:${radius},${coord.lat},${coord.lon});
+          );
+          out center;
+        `;
+        const resp = await fetch("https://overpass-api.de/api/interpreter", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+          body: new URLSearchParams({ data: query }),
+        });
+        const data = await resp.json();
+
+        const items = (data.elements || [])
+          .map((el) => {
+            const isWay = el.type === "way";
+            const lat = isWay ? el.center?.lat : el.lat;
+            const lon = isWay ? el.center?.lon : el.lon;
+            return {
+              id: `${el.type}/${el.id}`,
+              lat,
+              lon,
+              name:
+                el.tags?.name ||
+                (el.tags?.operator ? `${el.tags.operator} (site)` : "Recycling point"),
+              tags: el.tags || {},
+            };
+          })
+          .filter((p) => p.lat && p.lon);
+
+        setPlaces(items);
+      } catch (e) {
+        console.error("Overpass error:", e);
+      } finally {
+        setLoadingPlaces(false);
+      }
+    };
+
+    fetchOverpass();
+  }, [coord]);
+
+  // Public trash bins (toggleable) from Overpass
+  useEffect(() => {
+    if (!coord || !showTrash) {
+      if (!showTrash) setBins([]);
+      return;
+    }
+
+    const fetchBins = async () => {
+      try {
+        setLoadingBins(true);
+        const radius = 3000;
+        const query = `
+          [out:json][timeout:25];
+          (
+            node["amenity"="waste_basket"](around:${radius},${coord.lat},${coord.lon});
+            node["amenity"="litter_bin"](around:${radius},${coord.lat},${coord.lon});
+          );
+          out center;
+        `;
+        const resp = await fetch("https://overpass-api.de/api/interpreter", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+          body: new URLSearchParams({ data: query }),
+        });
+        const data = await resp.json();
+
+        const items = (data.elements || [])
+          .map((el) => ({
+            id: `${el.type}/${el.id}`,
+            lat: el.lat ?? el.center?.lat,
+            lon: el.lon ?? el.center?.lon,
+            name: el.tags?.name || "Trash bin",
+            tags: el.tags || {},
+          }))
+          .filter((p) => p.lat && p.lon);
+
+        setBins(items);
+      } catch (e) {
+        console.error("Overpass (bins) error:", e);
+      } finally {
+        setLoadingBins(false);
+      }
+    };
+
+    fetchBins();
+  }, [coord, showTrash]);
+
+  // Optional: try fetching location once on mount
+  useEffect(() => {
+    requestLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="py-10 lg:py-14">
       {/* Hero */}
@@ -198,8 +348,9 @@ export default function Detect() {
         </p>
       </section>
 
-      {/* Detector + Side panel */}
-      <div className="grid lg:grid-cols-[1fr,360px] gap-6 items-start">
+      {/* Detector + Side panel (with map) */}
+      <div className="grid lg:grid-cols-[1fr,420px] gap-6 items-start">
+        {/* Left: Camera */}
         <div className="relative rounded-xl2 border border-white/10 bg-gradient-to-b from-white/5 to-white/[.03] shadow-soft overflow-hidden">
           <div className="absolute left-4 top-4 z-10 rounded-full bg-black/60 text-xs px-3 py-1.5 text-white/80 border border-white/10">
             {status} • {fps || 0} fps
@@ -211,38 +362,31 @@ export default function Detect() {
           </div>
         </div>
 
-        {/* Info card */}
-        <aside className="rounded-xl2 border border-white/10 bg-white/5 shadow-soft p-5 sticky top-20">
+        {/* Right: Info + Finder + Map */}
+        <aside className="rounded-xl2 border border-white/10 bg-white/5 shadow-soft p-5 sticky top-20 space-y-5">
           <h3 className="text-lg font-semibold">Legend</h3>
-          <div className="mt-3 space-y-2 text-sm">
+          <div className="space-y-2 text-sm">
             <div className="flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full bg-brand-500 shadow-glow"></span>
+              <span className="h-3 w-3 rounded-full bg-brand-500 shadow-glow" />
               <span className="text-white/80">Recyclable (green)</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full bg-red-500"></span>
+              <span className="h-3 w-3 rounded-full bg-red-500" />
               <span className="text-white/80">Not recyclable (red)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: "#f59e0b" }} />
+              <span className="text-white/80">Trash bins (orange)</span>
             </div>
           </div>
 
-          <h4 className="mt-6 font-medium text-white/90">Tips</h4>
-          <ul className="mt-2 list-disc list-inside text-white/70 text-sm space-y-1">
-            <li>Rinse containers — no food residue.</li>
-            <li>Keep caps on bottles after rinsing.</li>
-            <li>Plastic bags/film: take to store drop-off.</li>
-          </ul>
-
-          {/* Nearby Recycling Finder (NEW) */}
-          <div className="mt-6 rounded-xl border border-white/10 bg-black/30 p-4">
-            <h4 className="font-medium text-white/90">Find nearby recycling</h4>
-            <p className="mt-1 text-xs text-white/60">
-              Use your current location or enter a ZIP code.
-            </p>
-
-            <div className="mt-3 flex flex-col sm:flex-row gap-3">
+          {/* Finder controls */}
+          <div className="space-y-2">
+            <div className="text-sm text-white/70">Find recycling near…</div>
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={requestLocation}
-                className="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 font-semibold shadow-glow"
+                className="px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-sm font-semibold"
               >
                 📍 Use my location
               </button>
@@ -252,43 +396,171 @@ export default function Detect() {
                 placeholder="ZIP code (US)"
                 value={zip}
                 onChange={(e) => setZip(e.target.value)}
-                className="w-full sm:w-40 rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-40 rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm outline-none focus:border-white/20"
               />
+              <button onClick={openMaps} className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm">
+                Open in Google Maps
+              </button>
+              <button onClick={openEarth911} className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm">
+                Earth911 Search
+              </button>
             </div>
 
             {/* Status line */}
-            <div className="mt-2 text-xs text-white/60">
+            <div className="text-xs text-white/60 space-y-1">
               {loc.status === "requesting" && "Requesting location permission…"}
+
               {loc.status === "granted" && (
-                <span>
+                <>
                   Location set ✓{" "}
                   <span className="text-white/50">
                     ({loc.lat?.toFixed(3)}, {loc.lng?.toFixed(3)})
                   </span>
-                </span>
+                </>
               )}
+
               {loc.status === "denied" && (
-                <span className="text-red-400">Location unavailable: {loc.error}</span>
+                <div className="text-red-400">
+                  Location unavailable: {loc.error}.{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (navigator.userAgent.includes("Chrome")) {
+                        window.open("chrome://settings/content/location", "_blank");
+                      } else {
+                        alert("Please enable Location for this site in your browser settings and try again.");
+                      }
+                    }}
+                    className="underline text-white/80"
+                  >
+                    Open location settings
+                  </button>
+                </div>
               )}
+
+              {(!loc.status || loc.status === "idle") && (
+                <div>
+                  {geoErr
+                    ? `📍 ${geoErr}`
+                    : coord
+                    ? `Location: ${coord.lat?.toFixed(4)}, ${coord.lon?.toFixed(4)}`
+                    : "—"}
+                </div>
+              )}
+
+              {location.protocol !== "https:" &&
+                location.hostname !== "localhost" &&
+                location.hostname !== "127.0.0.1" && (
+                  <div className="text-amber-300">
+                    Tip: Use HTTPS or open via http://localhost for geolocation.
+                  </div>
+                )}
             </div>
 
-            <div className="mt-3 flex gap-3">
-              <button
-                onClick={openMaps}
-                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 font-semibold"
+            {/* Toggle bins */}
+            <label className="mt-2 inline-flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="accent-amber-400"
+                checked={showTrash}
+                onChange={(e) => setShowTrash(e.target.checked)}
+              />
+              <span className="text-white/80">Show nearby trash bins</span>
+            </label>
+          </div>
+
+          {/* Embedded map */}
+          <div className="rounded-xl overflow-hidden border border-white/10">
+            <div className="h-[320px]">
+              <MapContainer
+                center={coord ? [coord.lat, coord.lon] : [37.7749, -122.4194]}
+                zoom={coord ? 13 : 12}
+                scrollWheelZoom
+                className="h-full w-full"
               >
-                Open in Google Maps
-              </button>
-              <button
-                onClick={openEarth911}
-                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 font-semibold"
-              >
-                Earth911 Search
-              </button>
+                <TileLayer
+                  attribution='&copy; OpenStreetMap contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                {coord && <FlyTo center={coord} />}
+
+                {/* User location marker */}
+                {coord && (
+                  <CircleMarker
+                    center={[coord.lat, coord.lon]}
+                    radius={8}
+                    pathOptions={{ color: "#10b981", fillColor: "#10b981", fillOpacity: 0.6 }}
+                  >
+                    <Popup><b>You are here</b></Popup>
+                  </CircleMarker>
+                )}
+
+                {/* Recycling centers */}
+                {places.map((p) => (
+                  <CircleMarker
+                    key={p.id}
+                    center={[p.lat, p.lon]}
+                    radius={7}
+                    pathOptions={{ color: "#60a5fa", fillColor: "#60a5fa", fillOpacity: 0.6 }}
+                  >
+                    <Popup>
+                      <div className="text-sm">
+                        <div className="font-semibold">{p.name}</div>
+                        {p.tags?.operator && <div>Operator: {p.tags.operator}</div>}
+                        {p.tags?.recycling_type && <div>Type: {p.tags.recycling_type}</div>}
+                        <div className="mt-1">
+                          <a
+                            className="underline"
+                            href={`https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Open in Maps
+                          </a>
+                        </div>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                ))}
+
+                {/* Trash bins */}
+                {showTrash && bins.map((p) => (
+                  <CircleMarker
+                    key={`bin-${p.id}`}
+                    center={[p.lat, p.lon]}
+                    radius={6}
+                    pathOptions={{ color: "#f59e0b", fillColor: "#f59e0b", fillOpacity: 0.65 }}
+                  >
+                    <Popup>
+                      <div className="text-sm">
+                        <div className="font-semibold">Trash bin</div>
+                        {p.tags?.operator && <div>Operator: {p.tags.operator}</div>}
+                        <div className="mt-1">
+                          <a
+                            className="underline"
+                            href={`https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Open in Maps
+                          </a>
+                        </div>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                ))}
+              </MapContainer>
+            </div>
+            <div className="px-3 py-2 text-xs text-white/60 border-t border-white/10">
+              {loadingPlaces || loadingBins
+                ? "Searching nearby…"
+                : `Found ${places.length} recycling site(s)${
+                    showTrash ? ` and ${bins.length} trash bin(s)` : ""
+                  }`}
             </div>
           </div>
 
-          <div className="mt-6 flex gap-3">
+          <div className="flex gap-3">
             <button
               onClick={() => setDetecting((v) => !v)}
               className="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 font-semibold shadow-glow"
