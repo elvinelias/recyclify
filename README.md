@@ -1,16 +1,72 @@
-# React + Vite
+Here is the **exact copy-and-paste README**, formatted cleanly and ready to replace your current one.
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Copy EVERYTHING below into your README.md:
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+# ♻️ Recyclify — AI-Powered Recycling Assistant
 
-## React Compiler
+Recyclify is an intelligent, real-time recycling assistant that helps users identify recyclable items, locate nearby recycling centers, and learn proper waste-sorting habits. Using on-device computer vision (TensorFlow.js + COCO-SSD), Recyclify scans items through your camera and automatically classifies them as recyclable or not, keeping all processing private on your device. It also features an embedded map that finds nearby recycling centers and trash bins using OpenStreetMap and the Overpass API, along with optional ZIP-code search and Google Maps integration. A dedicated Learn page teaches proper sorting rules, and an optional Gemini-powered chat assistant answers recycling questions. The goal of Recyclify is to make sustainable living simple, accurate, and accessible for everyone.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## 🚀 Running Recyclify Locally
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### **1. Clone the repository**
+
+```bash
+git clone https://github.com/YOUR-USERNAME/recyclify.git
+cd recyclify
+```
+
+### **2. Install dependencies**
+
+```bash
+npm install
+```
+
+### **3. Create a `.env` file in the project root**
+
+```
+GOOGLE_API_KEY=YOUR_API_KEY_HERE
+PORT=8787
+```
+
+### **4. Start the backend (Express server)**
+
+```bash
+node server.js
+```
+
+Backend runs at:
+
+```
+http://localhost:8787
+```
+
+### **5. Start the frontend (Vite)**
+
+```bash
+npm run dev
+```
+
+Frontend runs at:
+
+```
+http://localhost:5173
+```
+
+---
+
+## 🧰 Tech Stack
+
+* React + Vite
+* Tailwind CSS
+* TensorFlow.js (COCO-SSD object detection)
+* React-Leaflet + OpenStreetMap - Under Development
+* Overpass API for recycling 
+* Trash-bin lookup - Slightly Buggy
+* Google Gemini API (optional chat assistant) - Under Development
+* Express.js backend
+
+---
