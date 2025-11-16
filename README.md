@@ -1,9 +1,3 @@
-Here is the **exact copy-and-paste README**, formatted cleanly and ready to replace your current one.
-
-Copy EVERYTHING below into your README.md:
-
----
-
 # ♻️ Recyclify — AI-Powered Recycling Assistant
 
 Recyclify is an intelligent, real-time recycling assistant that helps users identify recyclable items, locate nearby recycling centers, and learn proper waste-sorting habits. Using on-device computer vision (TensorFlow.js + COCO-SSD), Recyclify scans items through your camera and automatically classifies them as recyclable or not, keeping all processing private on your device. It also features an embedded map that finds nearby recycling centers and trash bins using OpenStreetMap and the Overpass API, along with optional ZIP-code search and Google Maps integration. A dedicated Learn page teaches proper sorting rules, and an optional Gemini-powered chat assistant answers recycling questions. The goal of Recyclify is to make sustainable living simple, accurate, and accessible for everyone.
